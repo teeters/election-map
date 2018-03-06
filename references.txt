@@ -1,0 +1,6 @@
+Mike Bostock's blog: https://bl.ocks.org/mbostock/4090848 Good tutorial on
+creating maps with topo.js, and a source file for US geography
+
+Super useful tip for getting the centroid of an SVG path on this blog https://dillieodigital.wordpress.com/2013/02/13/quick-tip-getting-the-centroid-of-an-individual-svg-path-selection-in-d3/
+
+Thanks to Bill the Lizard for the titlecase function https://stackoverflow.com/questions/196972/convert-string-to-title-case-with-javascript

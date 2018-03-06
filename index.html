@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+
+<head>
+  <title>US Election Results</title>
+  <h1>US Election Results 1940-2016</h1>
+  <script src="https://d3js.org/d3.v4.min.js"></script>
+  <script src="https://d3js.org/topojson.v2.min.js"></script>
+  <script src="underscore.js"></script>
+
+  <style>
+    #tooltip{
+      background:#ffff;
+      position:absolute;
+      z-index:10;
+      pointer-events:none;
+      padding:10px;
+    }
+
+    .yeartext{
+      font-size:12px;
+    }
+
+    .statename{
+      font-size:20px;
+      font-family:"Times New Roman";
+    }
+
+    .candidate-list li{
+      font-size:12px;
+      background-color:'white';
+    }
+
+    .candidate-list{
+      padding-left:20px;
+      margin:5px;
+    }
+
+    .repcandidate{
+      color:"rgb(150,0,0)";
+    }
+
+    .demcandidate{
+      color:"rgb(0,0,150)";
+    }
+
+    .electoral-votes{
+      font-size:14px;
+    }
+
+    .legend-text{
+      font-size:12px;
+    }
+  </style>
+</head>
+<body>
+  <svg width='960' height='100' id='timeline'></svg>
+  <svg width='960' height='600' id='map'></svg>
+  <svg width='960' height='50', id='legend'></svg>
+  <div id='tooltip' style="visibility:hidden;">
+    <span class="statename">Nevada:</span><span class="electoral-votes"> electoral votes</span><br />
+    <ul class='candidate-list'>
+      <li class='demcandidate'>Democrat</li>
+      <li class='repcandidate'>Republican</li>
+    </ul>
+  </div>
+  <script>
+    var mapsvg = d3.select("svg#map");
+    var path = d3.geoPath();
+
+    function getColor(d){
+      //return scaled color for state record
+      if(+d.R_Percentage > +d.D_Percentage){
+        return redScale(+d.R_Percentage);
+      } else {
+        return blueScale(+d.D_Percentage);
+      }
+    }
+
+    var rColor = "rgb(150,0,0)"
+    var bColor = "rgb(0,0,150)";
+    //get color reflecting margin of victory
+    var redScale = d3.scaleLinear().domain([0,100]).range(["white", rColor]);
+    var blueScale = d3.scaleLinear().domain([0,100]).range(["white", bColor]);
+
+    //map states to ids
+    var stateId = {
+      "Alabama":"s01", "Alaska":"s02", "Arizona":"s04", "Arkansas":"s05",
+      "California":"s06", "Colorado":"s08", "Connecticut":"s09",
+      "Delaware":"s10",
+      "Dist. of Col.":"s11",
+      "Florida":"s12",
+      "Georgia":"s13",
+      "Hawaii":"s15",
+      "Idaho":"s16", "Illinois":"s17", "Indiana":"s18", "Iowa":"s19",
+      "Kansas":"s20", "Kentucky":"s21",
+      "Louisiana":"s22",
+      "Maine":"s23", "Maryland":"s24", "Massachusetts":"s25", "Michigan":"s26", "Minnesota":"s27",
+      "Mississippi":"s28", "Missouri":"s29", "Montana":"s30", "Nebraska":"s31", "Nevada":"s32",
+      "New Hampshire":"s33", "New Jersey":"s34", "New Mexico":"s35", "New York":"s36",
+      "North Carolina":"s37", "North Dakota":"s38",
+      "Ohio":"s39",
+      "Oklahoma":"s40", "Oregon":"s41",
+      "Pennsylvania":"s42",
+      "Rhode Island":"s44",
+      "South Carolina":"s45", "South Dakota":"s46",
+      "Tennessee":"s47", "Texas":"s48",
+      "Utah":"s49",
+      "Vermont":"s50", "Virginia":"s51",
+      "Washington":"s53", "West Virginia":"s54", "Wisconsin":"s55", "Wyoming":"s56"
+    }
+    //invert using underscore.js
+    var stateName = _.invert(stateId);
+
+    //tooltip functions
+    var tip = d3.select('div#tooltip');
+
+    //handy string function here
+    function toTitleCase(str){
+      return str.replace(/\w\S*/g, function(txt){return txt.charAt(0).toUpperCase() + txt.substr(1).toLowerCase();});
+    }
+
+    var showTip = function(d){
+      tip.select('.statename').text(d.State+': '+d.Total_EV);
+      tip.select('.demcandidate')
+        .text(toTitleCase(d.D_Nominee)+": "+Math.round(d.D_Percentage*10)/10+'%')
+        .style('color', bColor);
+      tip.select('.repcandidate')
+        .text(toTitleCase(d.R_Nominee)+': '+Math.round(d.R_Percentage*10)/10+'%')
+        .style('color', rColor);
+      return tip.style('visibility', 'visible');
+    }
+
+    var moveTip = function(d){
+      centroid = path.centroid(d);
+      var x = centroid[0];
+      var y = centroid[1]+100;
+      return tip.style('top', y+'px')
+        .style('left', x+'px');
+    }
+
+    var hideTip = function(d){
+      return tip.style('visibility', 'hidden');
+    }
+
+    //timeline functions
+    var timeline = d3.select('svg#timeline');
+    var yearWidth = 960.0/((2016-1940)/4); //we have this much room per year
+
+    function yearCircleX(d){
+      return (d.YEAR-1940)/4*yearWidth+yearWidth/2;
+    }
+
+    function yearFillColor(d){
+      if (d.PARTY == 'D'){
+        return bColor;
+      } else {
+        return rColor;
+      }
+    }
+
+    function selectYear(d){
+      //load data for the selected year and update the map
+      getElectionData(d.YEAR, displayElectionResults);
+
+      //move the indicator circle
+      timeline.select('.indicator-circle')
+        .datum(d)
+        .attr('cx', yearCircleX);
+    }
+
+    //draw line to connect the circles for the years
+    timeline.append('line')
+      .attr('x1', yearWidth/2)
+      .attr('y1', 25)
+      .attr('x2', 960-yearWidth/2)
+      .attr('y2', 25)
+      .style('stroke', 'black');
+
+    //load yearwise winners data, draw timeline
+    d3.csv("data/yearwise-winner.csv", function(data){
+      timeline.append('g')
+        .attr('class', 'yearcircle')
+        .selectAll("ellipse")
+        .data(data)
+        .enter().append("ellipse")
+        .attr('cx', yearCircleX)
+        .attr('cy', 25)
+        .attr('rx', yearWidth/2-5)
+        .attr('ry', yearWidth/2-5)
+        .attr('fill', yearFillColor)
+        .on('click', selectYear);
+
+      //write in years under circles
+      timeline.append('g')
+        .attr('class', 'yeartext')
+        .selectAll('text')
+        .data(data)
+        .enter().append('text')
+        .style('text-anchor', 'middle')
+        .attr('x', yearCircleX)
+        .attr('y', 60)
+        .text(function(d){ return d.YEAR; });
+
+      //add indicator circle to show currently selected year
+      timeline.append('ellipse')
+        .attr('class', 'indicator-circle')
+        .attr('cx', yearCircleX({'YEAR':1940}))
+        .attr('cy', 25)
+        .attr('rx', yearWidth/2-15)
+        .attr('ry', yearWidth/2-15)
+        .attr('fill', 'black')
+    });
+
+    //fetch topojson file of US, draw map
+    d3.json("https://d3js.org/us-10m.v1.json", function(err, us){
+      if (err) throw err;
+      var mapdata = topojson.feature(us, us.objects.states).features;
+
+      mapsvg.append('g')
+        .attr("class", "states")
+        .selectAll("path")
+        .data(mapdata)
+        .enter().append("path")
+        .attr("d", path)
+        .attr('id', function(d){ return 's'+d.id; })
+        .on('mouseover', showTip)
+        .on('mousemove', moveTip)
+        .on('mouseout', hideTip);
+
+      // svg.append("path")
+      //   .attr("class", "state-borders")
+      //   .attr("d", path(topojson.mesh(us, us.objects.states, function(a,b){ return a !== b; })))
+      //   .style('fill', getColor);
+
+      //try displaying results for 1940
+      getElectionData(1940, displayElectionResults);
+    });
+
+    //load election data for given year, process w/ callback
+    function getElectionData(year, callback){
+      d3.csv("data/election-results-"+year+".csv", callback)
+    }
+
+    //display data in cartogram
+    function displayElectionResults(data){
+      data.forEach(function(d){
+        var sId = stateId[d.State];
+        var color = getColor(d);
+        var statePath = d3.select('svg#map').select('path#'+sId);
+        statePath.style('fill', color);
+
+        //while we're at it, let's attach the data to the object for
+        //future methods to use
+        var newData = statePath.datum();
+        _.extendOwn(newData, d);
+        statePath.datum(newData);
+      });
+    }
+
+    //draw gradient for the legend
+    var legend = d3.select('svg#legend');
+    var linearGradient = legend.append('defs')
+      .append('linearGradient')
+      .attr('id', 'linear-gradient');
+
+    linearGradient.append('stop')
+      .attr('offset', '0%')
+      .attr('stop-color', bColor);
+
+    linearGradient.append('stop')
+      .attr('offset', '50%')
+      .attr('stop-color', 'white');
+
+    linearGradient.append('stop')
+      .attr('offset', '100%')
+      .attr('stop-color', rColor);
+
+    //draw rectangle and fill it with the gradient
+
+    legend.append('rect')
+      .attr('width', 960)
+      .attr('height', 10)
+      .style('fill', 'url(#linear-gradient)');
+
+    //now draw percentage markers under the rectangle
+    legend.append('text')
+      .attr('class', 'legend-text')
+      .attr('x', 5)
+      .attr('y', 25)
+      .style('font-weight', 'bold')
+      .text('D');
+
+    legend.append('text')
+      .attr('class', 'legend-text')
+      .attr('x', 955)
+      .attr('y', 25)
+      .style('font-weight', 'bold')
+      .text('R');
+
+    for(i=0; i<100; i+=20){
+      var xOffset = 960*i/100.0/2.0;
+      var y = 25;
+      legend.append('text')
+        .attr('class', 'legend-text')
+        .attr('x', 960/2+xOffset)
+        .attr('y', y)
+        .text(i);
+
+        legend.append('text')
+          .attr('class', 'legend-text')
+          .attr('x', 960/2-xOffset)
+          .attr('y', y)
+          .text(i);
+    }
+
+
+  </script>
+</body>
